@@ -1,0 +1,54 @@
+{
+  "name": "free-mine-ui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.13.1 <25"
+  },
+  "scripts": {
+    "dev": "vite",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build",
+    "lint": "npm run lint:js && npm run lint:styles",
+    "lint:js": "eslint . --max-warnings=0",
+    "lint:styles": "stylelint \"src/**/*.{css,scss}\" --max-warnings=0",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "check": "npm run lint && npm run format:check && npm test && npm run build"
+  },
+  "dependencies": {
+    "lucide-react": "1.72.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "viem": "2.57.19"
+  },
+  "overrides": {
+    "minimatch@^10.0.0": "11.0.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.0",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "eslint": "10.14.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.7",
+    "globals": "17.14.0",
+    "prettier": "3.10.1",
+    "sass": "1.108.2",
+    "stylelint": "17.16.0",
+    "stylelint-config-standard-scss": "17.0.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  }
+}
