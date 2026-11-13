@@ -2,6 +2,11 @@ import { formatUnits } from 'viem'
 
 export const ZERO_ADDRESS = `0x${'0'.repeat(40)}`
 
+const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
 export function decimal(value: string, places = 4): string {
   const [whole = '0', fraction = ''] = value.split('.')
   const digits = fraction.slice(0, places).replace(/0+$/, '')
@@ -30,10 +35,7 @@ export function date(value: string | number | null): string {
       ? new Date(Number(value) * 1000)
       : new Date(value)
   if (!Number.isFinite(parsed.getTime())) return '—'
-  return new Intl.DateTimeFormat('ru-RU', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(parsed)
+  return dateFormatter.format(parsed)
 }
 
 export const explorer = (

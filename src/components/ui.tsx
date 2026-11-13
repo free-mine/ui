@@ -1,8 +1,8 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { ArrowUpRight, X } from 'lucide-react'
 import { formatUnits } from 'viem'
 
-import { amount, explorer, shortAddress } from '../lib/format'
+import { decimal, explorer, shortAddress } from '../lib/format'
 
 export function BrandMark() {
   return (
@@ -65,12 +65,10 @@ export function Amount({
   symbol?: string
   places?: number
 }) {
+  const exact = formatUnits(BigInt(value), decimals)
   return (
-    <span
-      className="numeric"
-      title={`${formatUnits(BigInt(value), decimals)}${symbol ? ` ${symbol}` : ''}`}
-    >
-      {amount(value, decimals, places)}
+    <span className="numeric" title={`${exact}${symbol ? ` ${symbol}` : ''}`}>
+      {decimal(exact, places)}
       {symbol && <span className="unit"> {symbol}</span>}
     </span>
   )
@@ -138,6 +136,7 @@ export function Modal({
   busy?: boolean
 }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
   useEffect(() => {
     const dialog = ref.current
     const previous = document.activeElement
@@ -151,14 +150,14 @@ export function Modal({
     <dialog
       ref={ref}
       className="modal"
-      aria-labelledby="modal-title"
+      aria-labelledby={titleId}
       onCancel={event => {
         event.preventDefault()
         if (!busy) onClose()
       }}
     >
       <div className="panel-heading">
-        <h2 id="modal-title">{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         <button
           className="icon-button"
           aria-label="Закрыть"

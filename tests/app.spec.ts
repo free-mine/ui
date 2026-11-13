@@ -41,7 +41,7 @@ test('shows public balances, portfolio positions and independent explorer links'
     `https://app.uniswap.org/explore/pools/avalanche/${wavaxPool}`,
   )
   await page
-    .getByRole('button', { name: 'Размещение капитала', exact: true })
+    .getByRole('link', { name: 'Размещение капитала', exact: true })
     .click()
   await expect(
     page.getByRole('heading', { name: 'Заёмные средства' }),
@@ -106,7 +106,7 @@ test('exposes governance, holder search, withdrawal shifts and the public backup
     }),
   )
   await page.goto('/')
-  await page.getByRole('button', { name: 'Данные фонда', exact: true }).click()
+  await page.getByRole('link', { name: 'Данные фонда', exact: true }).click()
   await expect(
     page.getByRole('heading', { name: 'Управление фондом' }),
   ).toBeVisible()
@@ -155,7 +155,7 @@ test('navigation and portfolio remain within a mobile viewport', async ({
     'Мой кошелёк',
     'Обзор фонда',
   ]) {
-    await page.getByRole('button', { name: label, exact: true }).click()
+    await page.getByRole('link', { name: label, exact: true }).click()
     await expect(
       page.getByRole('heading', { name: 'Капитал в работе' }),
     ).toHaveCount(label === 'Обзор фонда' ? 1 : 0)
@@ -185,6 +185,33 @@ test('navigation and portfolio remain within a mobile viewport', async ({
       `${label}: ${overflow.elements.join(', ')} ${JSON.stringify(overflow.hidden)}`,
     ).toBeLessThanOrEqual(391)
   }
+})
+
+test('preserves hash history and skips to content without changing the page', async ({
+  page,
+}) => {
+  await mockPublicApi(page)
+  await page.goto('/#portfolio')
+  const portfolio = page.getByRole('link', {
+    name: 'Размещение капитала',
+    exact: true,
+  })
+  const data = page.getByRole('link', { name: 'Данные фонда', exact: true })
+  await expect(portfolio).toHaveAttribute('aria-current', 'page')
+  await data.click()
+  await expect(data).toHaveAttribute('aria-current', 'page')
+  await page.goBack()
+  await expect(portfolio).toHaveAttribute('aria-current', 'page')
+  await page.goForward()
+  await expect(data).toHaveAttribute('aria-current', 'page')
+  const skip = page.getByRole('link', { name: 'К содержимому', exact: true })
+  await skip.focus()
+  await skip.press('Enter')
+  await expect(page.getByRole('main')).toBeFocused()
+  await expect(page).toHaveURL(/#data$/)
+  await expect(
+    page.getByRole('heading', { name: 'Управление фондом' }),
+  ).toBeVisible()
 })
 
 test('offers wallet installation when no injected provider exists', async ({

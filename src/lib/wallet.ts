@@ -298,8 +298,9 @@ export function quoteOre(
 export async function readWalletBalances(
   session: WalletSession,
   freeMine: string,
+  signal?: AbortSignal,
 ): Promise<WalletBalances> {
-  await assertSession(session)
+  await assertSession(session, signal)
   const { publicClient } = clients(session)
   const address = getAddress(freeMine)
   const blockNumber = await publicClient.getBlockNumber()
@@ -363,7 +364,7 @@ export async function readWalletBalances(
   ])
   if (dollarDecimals > 18)
     throw new Error('Точность долларового токена не поддерживается контрактом')
-  await assertSession(session)
+  await assertSession(session, signal)
   return {
     ore,
     dollar,
@@ -414,22 +415,20 @@ export async function readConfirmedClaim(
   return null
 }
 
-/** Recheck a known hash without requesting another signature or transaction. */
 export async function checkTransaction(
   session: WalletSession,
   hash: Hash,
 ): Promise<'pending' | 'success' | 'reverted'> {
   await assertSession(session)
   const { publicClient } = clients(session)
-  try {
-    const receipt = await publicClient.getTransactionReceipt({ hash })
-    await assertSession(session)
-    return receipt.status
-  } catch (error) {
-    if (!(error instanceof TransactionReceiptNotFoundError)) throw error
-    await assertSession(session)
-    return 'pending'
-  }
+  const receipt = await publicClient
+    .getTransactionReceipt({ hash })
+    .catch(error => {
+      if (!(error instanceof TransactionReceiptNotFoundError)) throw error
+      return null
+    })
+  await assertSession(session)
+  return receipt?.status ?? 'pending'
 }
 
 async function submit(
@@ -486,10 +485,9 @@ export async function buyOre(
   expected: { dollar: string; entryPrice: bigint },
   options: TransactionOptions = {},
 ): Promise<Hash> {
-  await assertSession(session, options.signal)
   const address = getAddress(freeMine)
   const { publicClient, walletClient } = clients(session)
-  const balances = await readWalletBalances(session, freeMine)
+  const balances = await readWalletBalances(session, freeMine, options.signal)
   const ensureQuote = (dollar: string, entryPrice: bigint) => {
     if (
       dollar.toLowerCase() !== expected.dollar.toLowerCase() ||
@@ -569,12 +567,23 @@ export async function openClaim(
   await assertSession(session, options.signal)
   const amount = parseTokenAmount(input, 18)
   if (amount <= ONE_ORE) throw new Error('Для заявки нужно больше 1 MagicOre')
-  const balances = await readWalletBalances(session, freeMine)
-  if (amount > balances.oreBalance) throw new Error('Недостаточно MagicOre')
+  const address = getAddress(freeMine)
   const { publicClient, walletClient } = clients(session)
+  const ore = await publicClient.readContract({
+    address,
+    abi: freeMineAbi,
+    functionName: 'magicOre',
+  })
+  const balance = await publicClient.readContract({
+    address: ore,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [session.account],
+  })
+  if (amount > balance) throw new Error('Недостаточно MagicOre')
   // FreeMine owns MagicOre and locks tokens directly; no approval is required.
   const { request } = await publicClient.simulateContract({
-    address: getAddress(freeMine),
+    address,
     abi: freeMineAbi,
     functionName: 'openClaim',
     args: [amount],

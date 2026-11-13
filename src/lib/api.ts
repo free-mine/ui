@@ -228,6 +228,9 @@ export function createApiClient(
       return await read(response)
     } catch (error) {
       if (signal?.aborted || error instanceof ApiError) throw error
+      if (error instanceof SyntaxError) {
+        throw new ApiError('Сервер вернул некорректный JSON')
+      }
       throw new ApiError(
         controller.signal.aborted
           ? 'Сервер не ответил за 20 секунд. Попробуйте ещё раз'
@@ -239,35 +242,22 @@ export function createApiClient(
     }
   }
 
-  async function readJson(
-    path: string,
-    signal?: AbortSignal,
-  ): Promise<unknown> {
-    return request(
-      path,
-      async response => {
-        try {
-          return await response.json()
-        } catch (error) {
-          if (error instanceof Error && error.name === 'SyntaxError') {
-            throw new ApiError('Сервер вернул некорректный JSON')
-          }
-          throw error
-        }
-      },
-      signal,
-    )
-  }
-
   return {
-    backupUrl: `${base}/v1/backup`,
-    async getState(signal?: AbortSignal) {
-      return parseSnapshot(await readJson('state', signal))
+    getState(signal?: AbortSignal) {
+      return request(
+        'state',
+        async response => parseSnapshot(await response.json()),
+        signal,
+      )
     },
-    async getStatus(signal?: AbortSignal) {
-      return parseStatus(await readJson('status', signal))
+    getStatus(signal?: AbortSignal) {
+      return request(
+        'status',
+        async response => parseStatus(await response.json()),
+        signal,
+      )
     },
-    async getBackup(signal?: AbortSignal) {
+    getBackup(signal?: AbortSignal) {
       return request('backup', response => response.blob(), signal)
     },
   }

@@ -233,3 +233,85 @@ test('blocks duplicate submissions after a receipt timeout until its status is c
   ).toBeEnabled()
   expect(wallet.writes.map(write => write.functionName)).toEqual(['approve'])
 })
+
+for (const { action, functionName, balance } of [
+  { action: 'open', functionName: 'openClaim', balance: '698 ORE' },
+  { action: 'cancel', functionName: 'cancelClaim', balance: '799 ORE' },
+  { action: 'redeem', functionName: 'redeemClaim', balance: '1 240 USDC' },
+] as const) {
+  test(`recovers ${action} claim after a receipt timeout without resubmitting`, async ({
+    page,
+  }) => {
+    const snapshot = makeSnapshot()
+    const wallet = await installWallet(page, snapshot)
+    wallet.receiptUnavailable = true
+    await mockPublicApi(page, snapshot)
+    await page.clock.install()
+    await connect(page)
+
+    if (action === 'open') {
+      await page
+        .getByRole('button', { name: 'Заявка на вывод', exact: true })
+        .click()
+      await page.getByRole('textbox', { name: 'Количество MagicOre' }).fill('2')
+      await page
+        .getByRole('button', { name: 'Продолжить', exact: true })
+        .click()
+    } else {
+      await page
+        .locator('.claim-row')
+        .getByRole('button', {
+          name: action === 'cancel' ? 'Отменить заявку' : 'Получить',
+          exact: true,
+        })
+        .click()
+    }
+    const confirm = page.getByRole('button', {
+      name:
+        action === 'cancel'
+          ? 'Отменить и сжечь 1 MagicOre'
+          : 'Подтвердить в кошельке',
+      exact: true,
+    })
+    await confirm.click()
+    await expect(
+      page.getByText('Ожидание подтверждения в сети…', { exact: true }),
+    ).toBeVisible()
+    await page.clock.fastForward(181_000)
+    const checkStatus = page.getByRole('button', {
+      name: 'Проверить статус',
+      exact: true,
+    })
+    await expect(checkStatus).toBeVisible()
+    await expect(confirm).toBeDisabled()
+    await expect(page.locator('.claim-row')).toHaveCount(1)
+    await expect(page.locator('.claim-row')).toContainText('Заявка #1')
+    expect(wallet.writes.map(write => write.functionName)).toEqual([
+      functionName,
+    ])
+
+    wallet.receiptUnavailable = false
+    await checkStatus.click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(
+      page.getByText('Транзакция подтверждена', { exact: true }),
+    ).toBeVisible()
+    if (action === 'open') {
+      const created = page
+        .locator('.claim-row')
+        .filter({ hasText: 'Заявка #2' })
+      await expect(created).toContainText('Смена #8')
+      await expect(created).toContainText('2 ORE')
+      await expect(page.locator('.claim-row')).toHaveCount(2)
+    } else {
+      await expect(page.locator('.claim-row')).toHaveCount(0)
+      await expect(
+        page.getByText('У вас нет активных заявок на вывод'),
+      ).toBeVisible()
+    }
+    await expect(page.locator('.wallet-balances')).toContainText(balance)
+    expect(wallet.writes.map(write => write.functionName)).toEqual([
+      functionName,
+    ])
+  })
+}

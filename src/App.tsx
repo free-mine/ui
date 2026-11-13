@@ -79,13 +79,19 @@ export default function App() {
   }, [])
 
   const navigate = (next: Page) => {
-    setPage(next)
-    window.history.replaceState(null, '', `#${next}`)
+    window.location.hash = next
   }
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">
+      <a
+        className="skip-link"
+        href="#main-content"
+        onClick={event => {
+          event.preventDefault()
+          document.getElementById('main-content')?.focus()
+        }}
+      >
         К содержимому
       </a>
       <aside className="sidebar">
@@ -104,10 +110,10 @@ export default function App() {
         <span className="nav-caption">ЛИЧНЫЙ КАБИНЕТ</span>
         <nav aria-label="Основная навигация">
           {pages.map(item => (
-            <button
+            <a
               key={item.id}
               className={item.id === page ? 'nav-item active' : 'nav-item'}
-              onClick={() => navigate(item.id)}
+              href={`#${item.id}`}
               aria-current={item.id === page ? 'page' : undefined}
             >
               <item.icon size={19} />
@@ -115,7 +121,7 @@ export default function App() {
               {item.id === page && (
                 <ChevronRight size={15} className="nav-arrow" />
               )}
-            </button>
+            </a>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -169,7 +175,7 @@ export default function App() {
             )}
           </div>
         </header>
-        <main id="main-content" className="main-content">
+        <main id="main-content" className="main-content" tabIndex={-1}>
           <div className="page-heading">
             <div>
               <span className="eyebrow">
@@ -210,7 +216,7 @@ export default function App() {
               <span className="tag">Сервер обновляет данные</span>
             )}
           </div>
-          {(error || status?.lastError || stale) && (
+          {degraded && (
             <div className="notice warning" role="alert">
               <WifiOff size={18} />
               <div>

@@ -7,7 +7,7 @@ import {
   RefreshCw,
   Wallet,
 } from 'lucide-react'
-import { formatUnits } from 'viem'
+import { formatUnits, type Hash } from 'viem'
 
 import {
   amount,
@@ -52,8 +52,8 @@ type Draft =
   | { kind: 'cancel'; claim: FundClaim }
   | { kind: 'redeem'; claim: FundClaim }
 
-type UncertainTransaction = {
-  hash: `0x${string}`
+type SubmittedTransaction = {
+  hash: Hash
   action: TransactionProgress['action']
   draft: Draft
 }
@@ -66,6 +66,15 @@ const actionLabels: Record<TransactionProgress['action'], string> = {
   'cancel-claim': 'Отмена заявки',
   'redeem-claim': 'Получение выплаты',
 }
+
+const draftActions = {
+  buy: 'purchase',
+  open: 'open-claim',
+  cancel: 'cancel-claim',
+  redeem: 'redeem-claim',
+} as const
+
+const claimKey = (claim: FundClaim) => `${claim.shiftId}:${claim.claimId}`
 
 export function Account({
   data,
@@ -84,9 +93,10 @@ export function Account({
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<TransactionProgress | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
-  const [successHash, setSuccessHash] = useState<string | null>(null)
-  const [successLabel, setSuccessLabel] = useState('Транзакция подтверждена')
-  const [uncertain, setUncertain] = useState<UncertainTransaction | null>(null)
+  const [success, setSuccess] = useState<{ hash: Hash; label: string } | null>(
+    null,
+  )
+  const [uncertain, setUncertain] = useState<SubmittedTransaction | null>(null)
   const [checking, setChecking] = useState(false)
   const [checkMessage, setCheckMessage] = useState<string | null>(null)
   const [localClaims, setLocalClaims] = useState<ConfirmedClaim[]>([])
@@ -95,18 +105,17 @@ export function Account({
   const latestProgress = useRef<TransactionProgress | null>(null)
   const { session, balances } = wallet
   const symbol = data.fund.magicOre.symbol
-  const key = (claim: FundClaim) => `${claim.shiftId}:${claim.claimId}`
   const claims = [
     ...Object.values(data.fund.freeMine.claims),
     ...localClaims.filter(
       claim =>
         claim.blockNumber > data.block.number &&
-        !data.fund.freeMine.claims[key(claim)],
+        !data.fund.freeMine.claims[claimKey(claim)],
     ),
   ].filter(
     claim =>
       claim.miner.toLowerCase() === session?.account.toLowerCase() &&
-      !closedClaims.includes(key(claim)),
+      !closedClaims.includes(claimKey(claim)),
   )
 
   useEffect(() => () => controller.current?.abort(), [session, wallet.chainId])
@@ -170,15 +179,51 @@ export function Account({
   }
   const mismatchedOre =
     balances && balances.ore.toLowerCase() !== data.chain.magicOre.toLowerCase()
+  const operationsBlocked =
+    busy || Boolean(uncertain) || wallet.chainId !== AVALANCHE_CHAIN_ID
   const canSubmit =
     balances &&
     !mismatchedOre &&
     input &&
     !inputError &&
-    !busy &&
-    !uncertain &&
-    !wallet.loading &&
-    wallet.chainId === AVALANCHE_CHAIN_ID
+    !operationsBlocked &&
+    !wallet.loading
+
+  const review = (next: Draft) => {
+    setFailure(null)
+    setProgress(null)
+    setDraft(next)
+  }
+
+  const completeTransaction = async (
+    transaction: SubmittedTransaction,
+    signal: AbortSignal,
+  ) => {
+    const { hash, action, draft: completed } = transaction
+    if (action === 'open-claim') {
+      const claim = await readConfirmedClaim(
+        session,
+        data.chain.freeMine,
+        hash,
+      ).catch(() => null)
+      if (claim && !signal.aborted)
+        setLocalClaims(previous => [...previous, claim])
+    }
+    if (signal.aborted) return
+    if (completed.kind === 'cancel' || completed.kind === 'redeem')
+      setClosedClaims(previous => [...previous, claimKey(completed.claim)])
+    setSuccess({
+      hash,
+      label:
+        action === 'approval' || action === 'approval-reset'
+          ? 'Разрешение подтверждено — покупка ещё не отправлена'
+          : 'Транзакция подтверждена',
+    })
+    setFailure(null)
+    setDraft(null)
+    setProgress(null)
+    setInput('')
+  }
 
   const perform = async () => {
     if (!draft || busy || uncertain) return
@@ -187,8 +232,7 @@ export function Account({
     setBusy(true)
     setFailure(null)
     setProgress(null)
-    setSuccessHash(null)
-    setSuccessLabel('Транзакция подтверждена')
+    setSuccess(null)
     latestProgress.current = null
     const options = {
       signal: operation.signal,
@@ -198,7 +242,7 @@ export function Account({
       },
     }
     try {
-      let hash: string
+      let hash: Hash
       if (draft.kind === 'buy')
         hash = await buyOre(
           session,
@@ -207,21 +251,14 @@ export function Account({
           draft.balances,
           options,
         )
-      else if (draft.kind === 'open') {
+      else if (draft.kind === 'open')
         hash = await openClaim(
           session,
           data.chain.freeMine,
           draft.input,
           options,
         )
-        const claim = await readConfirmedClaim(
-          session,
-          data.chain.freeMine,
-          hash as `0x${string}`,
-        ).catch(() => null)
-        if (claim && !operation.signal.aborted)
-          setLocalClaims(previous => [...previous, claim])
-      } else {
+      else {
         const action = draft.kind === 'cancel' ? cancelClaim : redeemClaim
         hash = await action(
           session,
@@ -230,13 +267,13 @@ export function Account({
           draft.claim.claimId,
           options,
         )
-        if (!operation.signal.aborted)
-          setClosedClaims(previous => [...previous, key(draft.claim)])
       }
       if (operation.signal.aborted) return
-      setSuccessHash(hash)
-      setDraft(null)
-      setInput('')
+      await completeTransaction(
+        { hash, action: draftActions[draft.kind], draft },
+        operation.signal,
+      )
+      if (operation.signal.aborted) return
       await Promise.allSettled([wallet.refresh(), onRefresh()])
     } catch (error) {
       if (!operation.signal.aborted) {
@@ -261,10 +298,13 @@ export function Account({
 
   const resolveTransaction = async () => {
     if (!uncertain || checking) return
+    const operation = new AbortController()
+    controller.current = operation
     setChecking(true)
     setCheckMessage(null)
     try {
       const result = await checkTransaction(session, uncertain.hash)
+      if (operation.signal.aborted) return
       if (result === 'pending') {
         setCheckMessage(
           'Транзакция ещё не подтверждена. Повторите проверку позже.',
@@ -272,41 +312,19 @@ export function Account({
         return
       }
       if (result === 'success') {
-        if (uncertain.action === 'open-claim') {
-          const claim = await readConfirmedClaim(
-            session,
-            data.chain.freeMine,
-            uncertain.hash,
-          ).catch(() => null)
-          if (claim) setLocalClaims(previous => [...previous, claim])
-        }
-        if (
-          uncertain.draft.kind === 'cancel' ||
-          uncertain.draft.kind === 'redeem'
-        ) {
-          const closed = key(uncertain.draft.claim)
-          setClosedClaims(previous => [...previous, closed])
-        }
-        setSuccessLabel(
-          uncertain.action === 'approval' ||
-            uncertain.action === 'approval-reset'
-            ? 'Разрешение подтверждено — покупка ещё не отправлена'
-            : 'Транзакция подтверждена',
-        )
-        setSuccessHash(uncertain.hash)
-        setFailure(null)
-        setInput('')
+        await completeTransaction(uncertain, operation.signal)
       } else {
         setFailure(
           'Транзакция завершилась с ошибкой в сети. Можно проверить сумму и повторить операцию.',
         )
+        setDraft(null)
+        setProgress(null)
       }
+      if (operation.signal.aborted) return
       setUncertain(null)
-      setDraft(null)
-      setProgress(null)
       await Promise.allSettled([wallet.refresh(), onRefresh()])
     } catch (error) {
-      setCheckMessage(walletErrorMessage(error))
+      if (!operation.signal.aborted) setCheckMessage(walletErrorMessage(error))
     } finally {
       setChecking(false)
     }
@@ -372,17 +390,14 @@ export function Account({
           Контракт MagicOre отличается от снимка сервера. Обновите данные фонда.
         </p>
       )}
-      {successHash && (
+      {success && (
         <div className="notice positive" role="status">
           <CheckCircle2 size={18} />
           <div>
-            <strong>{successLabel}</strong>
-            <p>
-              Личный баланс обновлён из сети. Публичный снимок обновляется по
-              расписанию сервера.
-            </p>
+            <strong>{success.label}</strong>
+            <p>Публичный снимок обновляется по расписанию сервера.</p>
           </div>
-          <ExternalLink href={explorer(successHash, 'tx')}>
+          <ExternalLink href={explorer(success.hash, 'tx')}>
             Транзакция
           </ExternalLink>
         </div>
@@ -478,11 +493,7 @@ export function Account({
           <form
             onSubmit={event => {
               event.preventDefault()
-              if (canSubmit && balances) {
-                setFailure(null)
-                setProgress(null)
-                setDraft({ kind: mode, input, balances })
-              }
+              if (canSubmit && balances) review({ kind: mode, input, balances })
             }}
           >
             <label className="field-label" htmlFor="trade-amount">
@@ -615,7 +626,7 @@ export function Account({
               const shift = data.fund.freeMine.shifts[claim.shiftId]
               const precision = shift ? dollarDecimals(shift.dollarScale) : null
               return (
-                <div className="claim-row" key={key(claim)}>
+                <div className="claim-row" key={claimKey(claim)}>
                   <div>
                     <strong>Заявка #{claim.claimId}</strong>
                     <small>Смена #{claim.shiftId}</small>
@@ -655,32 +666,16 @@ export function Account({
                     {shift?.funded && (
                       <button
                         className="button primary"
-                        disabled={
-                          busy ||
-                          Boolean(uncertain) ||
-                          wallet.chainId !== AVALANCHE_CHAIN_ID
-                        }
-                        onClick={() => {
-                          setFailure(null)
-                          setProgress(null)
-                          setDraft({ kind: 'redeem', claim })
-                        }}
+                        disabled={operationsBlocked}
+                        onClick={() => review({ kind: 'redeem', claim })}
                       >
                         Получить
                       </button>
                     )}
                     <button
                       className="button secondary"
-                      disabled={
-                        busy ||
-                        Boolean(uncertain) ||
-                        wallet.chainId !== AVALANCHE_CHAIN_ID
-                      }
-                      onClick={() => {
-                        setFailure(null)
-                        setProgress(null)
-                        setDraft({ kind: 'cancel', claim })
-                      }}
+                      disabled={operationsBlocked}
+                      onClick={() => review({ kind: 'cancel', claim })}
                     >
                       Отменить заявку
                     </button>

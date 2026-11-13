@@ -1,61 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { makeSnapshot } from '../../tests/fixtures'
 import { ApiError, createApiClient, parseSnapshot, parseStatus } from './api'
-import type { PublicSnapshot } from './types'
 
-const address = `0x${'1'.repeat(40)}`
-const zeroAddress = `0x${'0'.repeat(40)}`
-const fixture: PublicSnapshot = {
-  format: 1,
-  chain: {
-    chainId: 43114,
-    deploymentTx: `0x${'a'.repeat(64)}`,
-    magicOre: address,
-    freeMine: address,
-    oreVein: address,
-  },
-  block: { number: 100, hash: `0x${'b'.repeat(64)}`, timestamp: 1700000000 },
-  updatedAt: '2026-11-11T00:00:00.000Z',
-  fund: {
-    magicOre: {
-      name: 'Magic Ore',
-      owner: address,
-      symbol: 'ORE',
-      decimals: 18,
-      totalSupply: '9007199254740993123456789',
-      holders: { [address]: '9007199254740993123456789' },
-    },
-    oreVein: {
-      owner: address,
-      freeMine: address,
-      admins: [],
-      successors: {},
-      pendingOwner: zeroAddress,
-      contractURI: '',
-    },
-    freeMine: {
-      owner: address,
-      magicOre: address,
-      entryPrice: '1000000000000000000',
-      priceUpdatedAt: '1700000000',
-      currentShiftId: '1',
-      dollar: { address, decimals: 6 },
-      claims: {},
-      shifts: {},
-    },
-  },
-  portfolio: {
-    blockNumber: 100,
-    nativeBalance: { symbol: 'AVAX', decimals: 18, amount: '0' },
-    balances: [],
-    aave: { supplies: [], debts: [], healthFactor: null },
-    uniswap: { pools: [], positions: [] },
-  },
-}
+const fixture = makeSnapshot()
 
 describe('public API', () => {
   it('keeps token balances exact and rejects other networks or mismatched blocks', () => {
-    expect(parseSnapshot(fixture).fund.magicOre.totalSupply).toBe(
+    const precise = makeSnapshot()
+    precise.fund.magicOre.totalSupply = '9007199254740993123456789'
+    expect(parseSnapshot(precise).fund.magicOre.totalSupply).toBe(
       '9007199254740993123456789',
     )
     expect(() =>
@@ -104,7 +58,6 @@ describe('public API', () => {
         cache: 'no-store',
       }),
     )
-    expect(client.backupUrl).toBe('https://example.test/api/v1/backup')
   })
 
   it('distinguishes unavailable snapshots from invalid JSON', async () => {
@@ -137,6 +90,27 @@ describe('public API', () => {
     const promise = createApiClient('', fetcher).getState(controller.signal)
     controller.abort()
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('aborts a stalled request after 20 seconds', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetcher = vi.fn<typeof fetch>().mockImplementation(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(init.signal?.reason),
+            )
+          }),
+      )
+      const result = expect(
+        createApiClient('', fetcher).getState(),
+      ).rejects.toThrow('Сервер не ответил за 20 секунд')
+      await vi.advanceTimersByTimeAsync(20_000)
+      await result
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('downloads the public backup as a binary blob', async () => {

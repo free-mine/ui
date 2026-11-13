@@ -275,11 +275,7 @@ export function FundData({
                   ([address, timestamp]) => (
                     <div key={address}>
                       <dt>
-                        {address === ZERO_ADDRESS ? (
-                          'Отказ от полномочий'
-                        ) : (
-                          <Address value={address} />
-                        )}
+                        <Address value={address} />
                       </dt>
                       <dd>{date(timestamp)}</dd>
                     </div>
@@ -290,8 +286,8 @@ export function FundData({
               <p className="muted">Не назначены</p>
             )}
             <p className="panel-note">
-              Время означает доступность получения полномочий. Передача не
-              происходит автоматически.
+              С указанного времени преемник может запросить права
+              администратора. Владелец фонда при этом не меняется.
             </p>
           </div>
         </div>

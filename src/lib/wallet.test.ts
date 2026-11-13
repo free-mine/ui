@@ -193,6 +193,22 @@ describe('wallet connection and chain enforcement', () => {
     expect(mocks.readContract).not.toHaveBeenCalled()
   })
 
+  it('stops an aborted purchase before reading balances', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(
+      buyOre(
+        session(),
+        freeMine,
+        '2',
+        { dollar, entryPrice: price },
+        { signal: controller.signal },
+      ),
+    ).rejects.toThrow()
+    expect(mocks.readContract).not.toHaveBeenCalled()
+    expect(mocks.writeContract).not.toHaveBeenCalled()
+  })
+
   it('discovers multiple wallets without opening a permission prompt', () => {
     const target = new EventTarget()
     vi.stubGlobal('window', target)
@@ -524,6 +540,38 @@ describe('withdrawal claims', () => {
       args: [2n * ONE_ORE],
     })
   })
+
+  it('opens a claim when dollar metadata and unrelated balances are unavailable', async () => {
+    mocks.readContract.mockImplementation(async ({ functionName, address }) => {
+      if (functionName === 'magicOre') return ore
+      if (functionName === 'balanceOf' && address === ore) return 10n * ONE_ORE
+      throw new Error('Unrelated contract unavailable')
+    })
+    mocks.getBalance.mockRejectedValue(new Error('Native balance unavailable'))
+    await expect(openClaim(session(), freeMine, '2')).resolves.toBe(hash)
+  })
+
+  it('rejects a claim that exceeds the MagicOre balance', async () => {
+    await expect(openClaim(session(), freeMine, '11')).rejects.toThrow(
+      'Недостаточно MagicOre',
+    )
+    expect(mocks.writeContract).not.toHaveBeenCalled()
+  })
+
+  it.each(['account', 'chain'])(
+    'does not sign a claim if the %s changes during simulation',
+    async change => {
+      mocks.simulateContract.mockImplementation(async (request: unknown) => {
+        if (change === 'account') accounts = [dollar]
+        else chainId = '0x1'
+        return { request }
+      })
+      await expect(openClaim(session(), freeMine, '2')).rejects.toThrow(
+        change === 'account' ? /Аккаунт/ : /Avalanche/,
+      )
+      expect(mocks.writeContract).not.toHaveBeenCalled()
+    },
+  )
 
   it('allows cancellation before funding', async () => {
     funded = false
