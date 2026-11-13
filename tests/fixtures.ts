@@ -215,6 +215,6 @@ export async function mockPublicApi(
   state = makeSnapshot(),
   status = makeStatus(state),
 ) {
-  await page.route('**/v1/state', route => route.fulfill({ json: state }))
-  await page.route('**/v1/status', route => route.fulfill({ json: status }))
+  await page.route('**/api/v1/state', route => route.fulfill({ json: state }))
+  await page.route('**/api/v1/status', route => route.fulfill({ json: status }))
 }

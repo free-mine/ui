@@ -70,7 +70,7 @@ test('recovers from initial synchronization failure on refresh', async ({
   const state = makeSnapshot()
   await mockPublicApi(page, state)
   let unavailable = true
-  await page.route('**/v1/state', route =>
+  await page.route('**/api/v1/state', route =>
     unavailable
       ? route.fulfill({
           status: 503,
@@ -99,7 +99,7 @@ test('exposes governance, holder search, withdrawal shifts and the public backup
 }) => {
   const state = makeSnapshot()
   await mockPublicApi(page, state)
-  await page.route('**/v1/backup', route =>
+  await page.route('**/api/v1/backup', route =>
     route.fulfill({
       contentType: 'application/gzip',
       body: gzipSync(JSON.stringify(state)),

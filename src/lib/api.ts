@@ -196,7 +196,7 @@ export function createApiClient(
   baseUrl = '',
   fetcher: typeof fetch = globalThis.fetch,
 ) {
-  const base = baseUrl.trim().replace(/\/+$/, '')
+  const base = baseUrl.trim().replace(/\/+$/, '') || '/api'
 
   async function request<T>(
     path: string,
