@@ -25,7 +25,7 @@
     "lucide-react": "1.72.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "viem": "2.57.19"
+    "viem": "2.58.6"
   },
   "overrides": {
     "minimatch@^10.0.0": "11.0.8"
